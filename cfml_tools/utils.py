@@ -1,5 +1,4 @@
 import numpy as np
-from numpy import nan
 import pandas as pd
 
 # REPRODUCING make_confounded_data FUNCTION FROM
@@ -7,6 +6,7 @@ import pandas as pd
 # FOR SKLEARN, PANDAS AND NUMPY AND WE WANTED TO DECOUPLE FROM IT
 # WE'RE NOT CREDIBLE FOR THIS CODE
 # LINK: https://github.com/nubank/fklearn/blob/master/src/fklearn/data/datasets.py
+
 
 def make_confounded_data(n):
     """

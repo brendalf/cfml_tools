@@ -7,18 +7,19 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.metrics import roc_auc_score
 
+
 # class for using a decision tree to compute effects
 class DecisionTreeCounterfactual:
 
     """
     Counterfactual estimation using a decision tree.
 
-    Given explanatory variables X, target variable y and treatment variable W, 
-    this class implements an individual counterfactual estimation model. 
+    Given explanatory variables X, target variable y and treatment variable W,
+    this class implements an individual counterfactual estimation model.
     We can break down the process in three steps:
 
     1 - model step) Fit a decision tree to X and y
-    2 - comparison step) at each of the tree's leaves, compare W and y to determine the counterfactuals for the leaf 
+    2 - comparison step) at each of the tree's leaves, compare W and y to determine the counterfactuals for the leaf
     3 - prediction step) assign new samples to a leaf, and predict counterfactuals
 
     Parameters
@@ -33,7 +34,7 @@ class DecisionTreeCounterfactual:
 
     min_sample_effect : int, optional (default=10)
 
-    The minimum number of samples in a neighborhood to deem a counterfactual estimate valid, for a given W. 
+    The minimum number of samples in a neighborhood to deem a counterfactual estimate valid, for a given W.
     If there's less treated/untreated elements than min_sample_effect, the counterfactual will be NaN.
 
     save_explanatory : bool, optional (default=False)
@@ -46,14 +47,14 @@ class DecisionTreeCounterfactual:
     If RandomState instance, random_state is the random number generator;
     If None, the random number generator is the RandomState instance used
     by `np.random`.
-    
-    """   
+
+    """
 
     # initializing
     def __init__(self, model=None, min_sample_effect=10, save_explanatory=False, random_state=None):
 
         # storing model
-        if model == None:
+        if model is None:
             self.model = DecisionTreeRegressor(min_samples_leaf=100)
         else:
             self.model = model
@@ -65,13 +66,14 @@ class DecisionTreeCounterfactual:
 
     def _test_treatment_linear_discriminative_power(self, leaf_df):
         """
-        Using data from elements on leaf, test if treatments are randomly assigned by using a linear model to predict it.
+        Using data from elements on leaf, test if treatments are
+        randomly assigned by using a linear model to predict it.
 
         Parameters
         ----------
-        
+
         leaf_df : pd.DataFrame
-        
+
         Training datafarme with features (X), treatment assignments (W) and target (y)
 
         Returns
@@ -83,7 +85,7 @@ class DecisionTreeCounterfactual:
 
         """
 
-        # organizing and standardizing data for model 
+        # organizing and standardizing data for model
         W_leaf = leaf_df['W']
         X_leaf = leaf_df.drop(['W', 'y'], axis=1)
         X_leaf = StandardScaler().fit_transform(X_leaf)
@@ -91,35 +93,35 @@ class DecisionTreeCounterfactual:
         # fitting model
         lr = LogisticRegression(solver='lbfgs')
         lr.fit(X_leaf, W_leaf)
-        
+
         # predicting
         W_predicted = lr.predict_proba(X_leaf)
-        
-        # if we have a single treatment treat as binary 
+
+        # if we have a single treatment treat as binary
         # classification problem, if not do nothing and
         # roc_auc_score function will take care of it
         if W_predicted.shape[1] == 2:
-            W_predicted = W_predicted[:,1]
-        
+            W_predicted = W_predicted[:, 1]
+
         # computing score (avg. AUC)
         score = roc_auc_score(
-            W_leaf, 
-            W_predicted, 
-            multi_class='ovr', 
+            W_leaf,
+            W_predicted,
+            multi_class='ovr',
             average='weighted'
         )
-        
+
         return score
-    
+
     def _compute_treatment_confounding(self, filtered_train_df):
         """
         Apply tests to determine if treatments are randomly assigned for all leaves
 
         Parameters
         ----------
-        
+
         filtered_train_df : pd.DataFrame
-        
+
         Subset of training dataframe for elements on leaves that effects are valid (given min_sample_effect parameter)
 
         Returns
@@ -151,9 +153,9 @@ class DecisionTreeCounterfactual:
 
         Parameters
         ----------
-        
+
         filtered_train_df : pd.DataFrame
-        
+
         Subset of training dataframe for elements on leaves that effects are valid (given min_sample_effect parameter)
 
         Returns
@@ -164,7 +166,7 @@ class DecisionTreeCounterfactual:
         Dataframe with expected outcomes for each treatment
 
         """
-        
+
         # computing avg outcomes for each treatment
         leaf_counterfactual_df = (
             filtered_train_df
@@ -172,25 +174,25 @@ class DecisionTreeCounterfactual:
             .reset_index()
             .set_index('leaf')
         )
-        
-        # fomatting column names 
+
+        # fomatting column names
         leaf_counterfactual_df.columns = (
             pd.MultiIndex
-            .from_product([ ['avg_outcome'], leaf_counterfactual_df.columns ],
-                          names=[None,'W'])
+            .from_product([['avg_outcome'], leaf_counterfactual_df.columns],
+                          names=[None, 'W'])
         )
-        
+
         return leaf_counterfactual_df
-        
+
     def _compute_feature_dispersion(self, train_df):
         """
         Computes feature dispersion between treatments in leaves, to help diagnosing if effects are valid
 
         Parameters
         ----------
-        
+
         train_df : pd.DataFrame
-        
+
         Training dataframe, as stored using the "save_explanatory=True" parameter
 
         Returns
@@ -206,7 +208,7 @@ class DecisionTreeCounterfactual:
         # and pivot by treatment to show user
         feat_percentiles_pivot = (
             train_df
-            .set_index(['leaf','W'])
+            .set_index(['leaf', 'W'])
             .drop(['y'], axis=1)
             .rank(pct=True)
             .pivot_table(index='leaf', columns='W')
@@ -215,21 +217,16 @@ class DecisionTreeCounterfactual:
 
         # putting levels to same column to match final output #
         # add prefix to first level
-        level_0 = (
-            'percentile_' + 
-            feat_percentiles_pivot.columns.get_level_values(0)
-        )
-        
+        level_0 = ('percentile_' + feat_percentiles_pivot.columns.get_level_values(0))
+
         # second level stays the same
-        level_1 = (
-            feat_percentiles_pivot.columns.get_level_values(1)
-        )
+        level_1 = (feat_percentiles_pivot.columns.get_level_values(1))
 
         # applying to df
         feat_percentiles_pivot.columns = (
             pd.MultiIndex.from_arrays([level_0, level_1])
         )
-        
+
         return feat_percentiles_pivot
 
     # fit model
@@ -237,24 +234,25 @@ class DecisionTreeCounterfactual:
 
         """
         Get counterfactual estimates given explanatory variables X, treatment variable W and target y
-        This method will fit a decision tree from X to y and store outcomes given distinct W values at each 
+        This method will fit a decision tree from X to y and store outcomes given distinct W values at each
         of its leaves
 
         Parameters
         ----------
-        
+
         X : array-like or sparse matrix of shape = [n_samples, n_features]
-        
+
         Data with explanatory variables, with possible confounders of treatment assignment and effect.
 
-        W : array-like, shape = [n_samples] 
+        W : array-like, shape = [n_samples]
 
-        Treatment variable. The model will try to estimate a counterfactual outcome for each unique value in this variable.
+        Treatment variable. The model will try to estimate a counterfactual outcome
+        for each unique value in this variable.
         Should not exceed 10 unique values.
 
         y: array-like, shape = [n_samples]
-    
-        Target variable. 
+
+        Target variable.
 
         verbose : int, optional (default=0)
 
@@ -269,7 +267,8 @@ class DecisionTreeCounterfactual:
 
         # checking if W has too many unique values
         if len(np.unique(W)) > 10:
-            raise ValueError('More than 10 unique values for W. Too many unique values will make the process very expensive.')
+            raise ValueError('More than 10 unique values for W. \
+                Too many unique values will make the process very expensive.')
 
         # fitting the model
         self.model.fit(X, y)
@@ -285,22 +284,20 @@ class DecisionTreeCounterfactual:
         self.leaf_counterfactual_df = (
             pd.DataFrame({'leaf': self.model.apply(X), 'y': y, 'W': W})
             .assign(count=1)
-            .groupby(['leaf','W']).sum()
+            .groupby(['leaf', 'W']).sum()
         )
 
         # making estimates based on small samples invalid
         invalid_estimate_mask = (
-            self.leaf_counterfactual_df['count'] < 
-            self.min_sample_effect
+            self.leaf_counterfactual_df['count'] < self.min_sample_effect
         )
         self.leaf_counterfactual_df.loc[invalid_estimate_mask, 'y'] = np.nan
 
         # correcting y by taking average
         self.leaf_counterfactual_df['y'] = (
-            self.leaf_counterfactual_df['y'] / 
-            self.leaf_counterfactual_df['count']
+            self.leaf_counterfactual_df['y'] / self.leaf_counterfactual_df['count']
         )
-        
+
         # return self
         return self
 
@@ -308,15 +305,15 @@ class DecisionTreeCounterfactual:
     def predict(self, X, verbose=0):
 
         """
-        Predict counterfactual outcomes for X. 
+        Predict counterfactual outcomes for X.
         This method runs new samples through the tree, and predicts counterfactuals
         given which leaf new samples ended up into
 
         Parameters
         ----------
-        
+
         X : array-like or sparse matrix of shape = [n_samples, n_features]
-        
+
         Data with explanatory variables, with possible confounders of treatment assignment and effect.
 
         verbose : int, optional (default=0)
@@ -325,7 +322,7 @@ class DecisionTreeCounterfactual:
 
         Returns
         -------
-        
+
         counterfactual_df : pd.DataFrame
 
         Counterfactual outcomes per sample.
@@ -341,16 +338,16 @@ class DecisionTreeCounterfactual:
             .merge(self.leaf_counterfactual_df.reset_index(), how='left')
             .pivot(values='y', columns='W', index='id')
         )
-        
+
         # correcting columns
         counterfactual_df.columns = (
-            pd.MultiIndex
-            .from_product([['y_hat'], counterfactual_df.columns,],names=[None,'W'])
+            pd.MultiIndex.from_product([
+                ['y_hat'], counterfactual_df.columns
+            ], names=[None, 'W'])
         )
-        
+
         # returning counterfactual df
         return counterfactual_df
-
 
     # running CV for model parameters
     def get_cross_val_scores(self, X, y, scoring=None, verbose=0):
@@ -360,17 +357,17 @@ class DecisionTreeCounterfactual:
 
         Parameters
         ----------
-        
+
         X : array-like or sparse matrix of shape = [n_samples, n_features]
-        
+
         Data with explanatory variables, with possible confounders of treatment assignment and effect.
 
         y: array-like, shape = [n_samples]
 
-        Target variable. 
-        
+        Target variable.
+
         scoring : string, callable or None, optional, default: None
-        
+
         Scoring method for sklearn's cross_val_score function:
 
         A string (see model evaluation documentation) or
@@ -382,39 +379,38 @@ class DecisionTreeCounterfactual:
         but only a single metric is permitted.
 
         If None, the estimator's default scorer (if available) is used.
-        
+
         verbose : int, optional (default=0)
 
         Verbosity level for sklearn's function cross_val_score.
 
         Returns
         -------
-        
+
         scores : array of float, shape=(len(list(cv)),)
         Array of scores of the estimator for each run of the cross validation.
-        
+
         """
-        
+
         # CV method
         kf = KFold(
-            n_splits=5, 
-            shuffle=True, 
+            n_splits=5,
+            shuffle=True,
             random_state=self.random_state
         )
 
         # generating validation predictions
         scores = cross_val_score(
-            self.model, 
-            X, 
-            y, 
-            cv=kf, 
-            scoring=scoring, 
+            self.model,
+            X,
+            y,
+            cv=kf,
+            scoring=scoring,
             verbose=verbose
         )
 
         # calculating result
         return scores
-
 
     def run_leaf_diagnostics(self):
         """
@@ -460,10 +456,10 @@ class DecisionTreeCounterfactual:
         # leaf diagnostics df
         dfs = [leaf_counterfactual_df, feat_percentiles_df, confounding_df]
         leaf_diagnostics_df = pd.concat(
-            dfs, 
-            axis=1, 
-            join='inner', 
-            levels=[0,1]
+            dfs,
+            axis=1,
+            join='inner',
+            levels=[0, 1]
         )
 
         return leaf_diagnostics_df
@@ -472,20 +468,20 @@ class DecisionTreeCounterfactual:
     def explain(self, sample):
 
         """
-        Explain predcitions of counterfactual outcomes for one sample. 
+        Explain predcitions of counterfactual outcomes for one sample.
         This method shows diagnostics and comparables so you can trust
         and explain counterfactual predictions to others
 
         Parameters
         ----------
-        
+
         sample : array-like or sparse matrix of shape = [1, n_features]
-        
+
         Sample that you want to get explanations for
 
         Returns
         -------
-        
+
         comparables_table : pd.DataFrame
 
         Table of comparable elements.
@@ -503,7 +499,8 @@ class DecisionTreeCounterfactual:
                 .drop('leaf', axis=1)
             )
         else:
-            raise ValueError('Model did not store training samples to get explanations from. Setting save_explanatory=True will solve the issue')
+            raise ValueError('Model did not store training samples to get explanations from. \
+                Setting save_explanatory=True will solve the issue')
 
         # returning comparables table
         return comparables_table
